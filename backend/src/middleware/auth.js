@@ -1,9 +1,8 @@
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const User = require('../models/User');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'licencia-admin-secret-key-2024';
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS;
 
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -22,8 +21,9 @@ const authMiddleware = (req, res, next) => {
 };
 
 const login = (username, password) => {
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
-    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+  const user = User.validatePassword(username, password);
+  if (user) {
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
     return { success: true, token };
   }
   return { success: false };

@@ -34,8 +34,20 @@ export const licenseApi = {
     const params = new URLSearchParams();
     if (filters.type) params.append('type', filters.type);
     if (filters.status) params.append('status', filters.status);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.offset) params.append('offset', filters.offset);
     const { data } = await api.get(`?${params}`);
     return data;
+  },
+
+  count: async (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.type) params.append('type', filters.type);
+    if (filters.status) params.append('status', filters.status);
+    if (filters.search) params.append('search', filters.search);
+    const { data } = await api.get(`/count?${params}`);
+    return data.count;
   },
 
   getById: async (id) => {
@@ -66,5 +78,47 @@ export const licenseApi = {
   validate: async (key) => {
     const { data } = await api.post('/validate', { key });
     return data;
+  },
+
+  // Users
+  getUsers: async () => {
+    const { data } = await api.get('/users');
+    return data;
+  },
+
+  createUser: async (user) => {
+    const { data } = await api.post('/users', user);
+    return data;
+  },
+
+  updateUser: async (id, user) => {
+    const { data } = await api.put(`/users/${id}`, user);
+    return data;
+  },
+
+  deleteUser: async (id) => {
+    const { data } = await api.delete(`/users/${id}`);
+    return data;
+  },
+
+  changePassword: async (passwords) => {
+    const { data } = await api.post('/users/change-password', passwords);
+    return data;
+  },
+
+  // Statistics and logs
+  getStatistics: async () => {
+    const { data } = await api.get('/statistics');
+    return data;
+  },
+
+  getAuditLogs: async () => {
+    const { data } = await api.get('/users/audit-logs');
+    return data;
+  },
+
+  // Export
+  exportCSV: () => {
+    window.open(`${API_BASE}/export`, '_blank');
   }
 };

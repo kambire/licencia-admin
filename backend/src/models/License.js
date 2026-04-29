@@ -1,4 +1,5 @@
 const db = require('../db/database');
+const AuditLog = require('./AuditLog');
 
 const License = {
   getAll: (filters = {}) => {
@@ -13,8 +14,44 @@ const License = {
       query += ' AND status = ?';
       params.push(filters.status);
     }
+    if (filters.search) {
+      query += ' AND (key LIKE ? OR owner LIKE ? OR description LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
     query += ' ORDER BY createdAt DESC';
+    
+    if (filters.limit) {
+      query += ' LIMIT ?';
+      params.push(filters.limit);
+      if (filters.offset) {
+        query += ' OFFSET ?';
+        params.push(filters.offset);
+      }
+    }
+    
     return db.prepare(query).all(...params);
+  },
+
+  count: (filters = {}) => {
+    let query = 'SELECT COUNT(*) as count FROM licenses WHERE 1=1';
+    const params = [];
+
+    if (filters.type) {
+      query += ' AND type = ?';
+      params.push(filters.type);
+    }
+    if (filters.status) {
+      query += ' AND status = ?';
+      params.push(filters.status);
+    }
+    if (filters.search) {
+      query += ' AND (key LIKE ? OR owner LIKE ? OR description LIKE ?)';
+      const searchTerm = `%${filters.search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    return db.prepare(query).get(...params).count;
   },
 
   getById: (id) => {
@@ -72,23 +109,51 @@ const License = {
     return result.changes > 0;
   },
 
-  validate: (key) => {
+  validate: (key, ipAddress) => {
     const license = License.getByKey(key);
-    if (!license) return { valid: false, reason: 'License not found' };
+    if (!license) {
+      AuditLog.log(null, 'VALIDATE_LICENSE', `Failed: key not found - ${key}`, ipAddress);
+      return { valid: false, reason: 'License not found' };
+    }
 
     const now = new Date();
-    if (license.status === 'revoked') return { valid: false, reason: 'License revoked' };
-    if (license.status === 'expired') return { valid: false, reason: 'License expired' };
+    if (license.status === 'revoked') {
+      AuditLog.log(null, 'VALIDATE_LICENSE', `Failed: revoked - ${key}`, ipAddress);
+      return { valid: false, reason: 'License revoked' };
+    }
+    if (license.status === 'expired') {
+      AuditLog.log(null, 'VALIDATE_LICENSE', `Failed: expired - ${key}`, ipAddress);
+      return { valid: false, reason: 'License expired' };
+    }
 
     if (license.expiresAt) {
       const expiry = new Date(license.expiresAt);
       if (expiry < now) {
         License.update(license.id, { status: 'expired' });
+        AuditLog.log(null, 'VALIDATE_LICENSE', `Failed: expired (auto) - ${key}`, ipAddress);
         return { valid: false, reason: 'License expired', expiredAt: license.expiresAt };
       }
     }
 
+    AuditLog.log(null, 'VALIDATE_LICENSE', `Success: ${key}`, ipAddress);
     return { valid: true, license: { ...license, metadata: license.metadata ? JSON.parse(license.metadata) : null } };
+  },
+
+  getStatistics: () => {
+    const stats = db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+        SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expired,
+        SUM(CASE WHEN status = 'revoked' THEN 1 ELSE 0 END) as revoked,
+        SUM(CASE WHEN type = 'software' THEN 1 ELSE 0 END) as software,
+        SUM(CASE WHEN type = 'document' THEN 1 ELSE 0 END) as document,
+        SUM(CASE WHEN type = 'service' THEN 1 ELSE 0 END) as service,
+        SUM(CASE WHEN type = 'general' THEN 1 ELSE 0 END) as general
+      FROM licenses
+    `).get();
+    
+    return stats;
   }
 };
 

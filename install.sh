@@ -19,6 +19,11 @@ error_handler() {
     exit $exit_code
 }
 
+# Variables para HTTPS
+USE_HTTPS=false
+DOMAIN_NAME=""
+EMAIL=""
+
 # Verificar si whiptail está instalado
 check_whiptail() {
     if ! command -v whiptail &> /dev/null; then
@@ -31,7 +36,7 @@ check_whiptail() {
     fi
 }
 
-# Función para mostrar progreso (si whiptail está disponible)
+# Función para mostrar progreso
 show_progress() {
     local percent=$1
     local message=$2
@@ -52,7 +57,7 @@ show_progress() {
 show_banner() {
     if command -v whiptail &> /dev/null; then
         whiptail --title "Sistema de Licencias" --msgbox \
-        "Bienvenido al instalador del Sistema de Administración de Licencias\n\nRepositorio: https://github.com/kambire/licencia-admin\n\nEste asistente configurará todo automáticamente para Ubuntu 22.04." \
+        "Bienvenido al instalador del Sistema de Administración de Licencias\n\nRepositorio: https://github.com/kambire/licencia-admin\n\nEste asistente configurará todo automáticamente para Ubuntu22.04." \
         12 60
     else
         echo -e "${GREEN}========================================${NC}"
@@ -60,6 +65,24 @@ show_banner() {
         echo -e "${GREEN}========================================${NC}"
         echo -e "Repositorio: https://github.com/kambire/licencia-admin"
         echo ""
+    fi
+}
+
+# Preguntar sobre HTTPS
+ask_https() {
+    if command -v whiptail &> /dev/null; then
+        if whiptail --title "HTTPS/SSL" --yesno "¿Deseas configurar HTTPS con Let's Encrypt?\n\nNecesitas:\n- Un dominio apuntando a este servidor\n- Puerto 80 abierto\n- Puerto 443 abierto" 12 60; then
+            USE_HTTPS=true
+            DOMAIN_NAME=$(whiptail --title "Dominio" --inputbox "Ingresa tu dominio (ejemplo: licencias.tudominio.com):" 8 50 3>&1 1>&2 2>&3)
+            EMAIL=$(whiptail --title "Email" --inputbox "Ingresa tu email para Let's Encrypt:" 8 50 3>&1 1>&2 2>&3)
+        fi
+    else
+        read -p "¿Configurar HTTPS con Let's Encrypt? (y/N): " confirm
+        if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+            USE_HTTPS=true
+            read -p "Dominio (ejemplo: licencias.tudominio.com): " DOMAIN_NAME
+            read -p "Email para Let's Encrypt: " EMAIL
+        fi
     fi
 }
 
@@ -104,7 +127,7 @@ install_step1_deps() {
     apt update -y > /dev/null 2>&1
     
     show_progress 15 "Instalando dependencias base..."
-    apt install -y curl git build-essential ufw nginx openssl > /dev/null 2>&1
+    apt install -y curl git build-essential ufw nginx openssl certbot python3-certbot-nginx > /dev/null 2>&1
     
     # Verificar instalación de nginx
     if ! command -v nginx &> /dev/null; then
@@ -224,7 +247,45 @@ EOL
     
     show_progress 88 "Configurando Nginx..."
     
-    cat > /etc/nginx/sites-available/licencia-admin <<'EOL'
+    if [ "$USE_HTTPS" = true ] && [ -n "$DOMAIN_NAME" ]; then
+        # Configuración con HTTPS
+        cat > /etc/nginx/sites-available/licencia-admin <<EOL
+server {
+    listen 80;
+    server_name $DOMAIN_NAME;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN_NAME;
+
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem;
+
+    # Frontend
+    location / {
+        root /opt/licencia-admin/frontend/dist;
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # Backend API
+    location /api {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOL
+    else
+        # Configuración HTTP normal
+        cat > /etc/nginx/sites-available/licencia-admin <<'EOL'
 server {
     listen 80;
     server_name _;
@@ -248,6 +309,7 @@ server {
     }
 }
 EOL
+    fi
     
     # Activar configuración de Nginx
     ln -sf /etc/nginx/sites-available/licencia-admin /etc/nginx/sites-enabled/
@@ -291,7 +353,27 @@ install_step8_firewall() {
     ufw default allow outgoing > /dev/null 2>&1
     ufw allow 22/tcp comment 'SSH' > /dev/null 2>&1
     ufw allow 80/tcp comment 'HTTP' > /dev/null 2>&1
+    
+    if [ "$USE_HTTPS" = true ]; then
+        ufw allow 443/tcp comment 'HTTPS' > /dev/null 2>&1
+    fi
+    
     ufw --force enable > /dev/null 2>&1
+}
+
+install_step9_ssl() {
+    if [ "$USE_HTTPS" = true ] && [ -n "$DOMAIN_NAME" ] && [ -n "$EMAIL" ]; then
+        show_progress 97 "Configurando SSL con Let's Encrypt..."
+        
+        # Obtener certificado
+        certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --email "$EMAIL" --no-eff-email > /dev/null 2>&1 || {
+            echo -e "${YELLOW}Advertencia: No se pudo configurar SSL automáticamente${NC}"
+            echo -e "${YELLOW}Asegúrate de que el dominio $DOMAIN_NAME apunte a este servidor${NC}"
+        }
+        
+        # Configurar renovación automática
+        echo "0 2 * * * certbot renew --quiet" | crontab -
+    fi
 }
 
 # Verificación final
@@ -321,10 +403,15 @@ show_summary() {
     local ip=$(hostname -I | awk '{print $1}')
     local pass=$(cat /tmp/admin_pass.txt 2>/dev/null || echo "ERROR: No se pudo leer la contraseña")
     
+    local access_url="http://${ip}"
+    if [ "$USE_HTTPS" = true ] && [ -n "$DOMAIN_NAME" ]; then
+        access_url="https://${DOMAIN_NAME}"
+    fi
+    
     if command -v whiptail &> /dev/null; then
         whiptail --title "Instalación Completada" --msgbox \
-        "El sistema se ha instalado y configurado correctamente.\n\nCredenciales de Administrador:\n\nUsuario: admin\nContraseña: ${pass}\n\nAcceso al sistema:\nhttp://${ip}\n\nBackend API:\nhttp://${ip}/api\n\nIMPORTANTE: Guarda estas credenciales en un lugar seguro. La contraseña no se volverá a mostrar." \
-        20 65
+        "El sistema se ha instalado y configurado correctamente.\n\nCredenciales de Administrador:\n\nUsuario: admin\nContraseña: ${pass}\n\nAcceso al sistema:\n${access_url}\n\nBackend API:\n${access_url}/api\n\nIMPORTANTE: Guarda estas credenciales en un lugar seguro. La contraseña no se volverá a mostrar." \
+        22 70
     fi
     
     # Mostrar en terminal también
@@ -332,10 +419,10 @@ show_summary() {
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}  Instalación Completada${NC}"
     echo -e "${GREEN}========================================${NC}"
-    echo -e "Acceso al sistema: ${BLUE}http://${ip}${NC}"
+    echo -e "Acceso al sistema: ${BLUE}${access_url}${NC}"
     echo -e "Usuario: ${YELLOW}admin${NC}"
     echo -e "Contraseña: ${YELLOW}${pass}${NC}"
-    echo -e "Backend API: ${BLUE}http://${ip}/api${NC}"
+    echo -e "Backend API: ${BLUE}${access_url}/api${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo -e "${YELLOW}IMPORTANTE: Guarda estas credenciales ahora.${NC}"
@@ -356,6 +443,8 @@ show_summary() {
     echo "  Reiniciar backend: systemctl restart licencia-backend"
     echo "  Verificar estado: systemctl status licencia-backend"
     echo "  Actualizar sistema: sudo bash /opt/licencia-admin/update.sh"
+    echo "  Verificar sistema: sudo bash /opt/licencia-admin/check.sh"
+    echo "  Backup: sudo bash /opt/licencia-admin/backup.sh"
     echo ""
 }
 
@@ -365,6 +454,7 @@ main() {
     check_os
     check_whiptail
     show_banner
+    ask_https
     
     install_step1_deps
     install_step2_node
@@ -374,6 +464,7 @@ main() {
     install_step6_admin
     install_step7_services
     install_step8_firewall
+    install_step9_ssl
     
     if verify_installation; then
         show_summary
