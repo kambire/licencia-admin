@@ -99,6 +99,8 @@ function Dashboard() {
                 <th style={{ padding: 10, border: '1px solid #ddd' }}>Tipo</th>
                 <th style={{ padding: 10, border: '1px solid #ddd' }}>Estado</th>
                 <th style={{ padding: 10, border: '1px solid #ddd' }}>Propietario</th>
+                <th style={{ padding: 10, border: '1px solid #ddd' }}>Validaciones</th>
+                <th style={{ padding: 10, border: '1px solid #ddd' }}>IP Vinculada</th>
                 <th style={{ padding: 10, border: '1px solid #ddd' }}>Expira</th>
                 <th style={{ padding: 10, border: '1px solid #ddd' }}>Acciones</th>
               </tr>
@@ -110,6 +112,14 @@ function Dashboard() {
                   <td style={{ padding: 10, border: '1px solid #ddd' }}>{lic.type}</td>
                   <td style={{ padding: 10, border: '1px solid #ddd', color: getStatusColor(lic.status), fontWeight: 'bold' }}>{lic.status}</td>
                   <td style={{ padding: 10, border: '1px solid #ddd' }}>{lic.owner || '-'}</td>
+                  <td style={{ padding: 10, border: '1px solid #ddd', textAlign: 'center' }}>
+                    <span title={`Última: ${lic.last_validated_at ? new Date(lic.last_validated_at).toLocaleString() : 'Nunca'}`}>
+                      {lic.validation_count || 0}
+                    </span>
+                  </td>
+                  <td style={{ padding: 10, border: '1px solid #ddd', fontSize: 12 }}>
+                    {lic.bound_ip ? <span title="IP vinculada">🔒 {lic.bound_ip}</span> : 'N/A'}
+                  </td>
                   <td style={{ padding: 10, border: '1px solid #ddd' }}>{lic.expiresAt ? new Date(lic.expiresAt).toLocaleDateString() : 'Nunca'}</td>
                   <td style={{ padding: 10, border: '1px solid #ddd' }}>
                     <Link to={`/create/${lic.id}`} style={{ marginRight: 10 }}>Editar</Link>

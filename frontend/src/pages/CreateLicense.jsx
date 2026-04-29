@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { licenseApi } from '../services/api';
 
 function CreateLicense() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    key: '', type: 'general', status: 'active', owner: '', description: '', expiresAt: ''
+    key: '', type: 'general', status: 'active', owner: '', description: '', expiresAt: '',
+    bound_ip: '', bound_hardware: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -19,7 +20,9 @@ function CreateLicense() {
           status: data.status,
           owner: data.owner || '',
           description: data.description || '',
-          expiresAt: data.expiresAt ? data.expiresAt.split('T')[0] : ''
+          expiresAt: data.expiresAt ? data.expiresAt.split('T')[0] : '',
+          bound_ip: data.bound_ip || '',
+          bound_hardware: data.bound_hardware || ''
         });
       });
     }
@@ -36,6 +39,9 @@ function CreateLicense() {
     try {
       const payload = { ...form };
       if (!payload.expiresAt) delete payload.expiresAt;
+      if (!payload.bound_ip) delete payload.bound_ip;
+      if (!payload.bound_hardware) delete payload.bound_hardware;
+      
       if (id) {
         await licenseApi.update(id, payload);
       } else {
@@ -86,6 +92,34 @@ function CreateLicense() {
           <label>Fecha de Expiración:</label><br />
           <input type="date" value={form.expiresAt} onChange={e => setForm({...form, expiresAt: e.target.value})} style={{ width: '100%', padding: 8 }} />
         </div>
+        
+        <hr style={{ margin: '20px 0' }} />
+        <h3 style={{ marginTop: 0 }}>Seguridad Avanzada</h3>
+        
+        <div style={{ marginBottom: 15 }}>
+          <label>IP Vinculada (opcional):</label><br />
+          <input 
+            type="text" 
+            value={form.bound_ip} 
+            onChange={e => setForm({...form, bound_ip: e.target.value})}
+            placeholder="Ej: 192.168.1.100 o 10.0.0.0/8"
+            style={{ width: '100%', padding: 8 }}
+          />
+          <small style={{ color: '#666' }}>Dejar vacío para permitir cualquier IP. Soporta rangos CIDR.</small>
+        </div>
+        
+        <div style={{ marginBottom: 15 }}>
+          <label>Hardware ID Vinculado (opcional):</label><br />
+          <input 
+            type="text" 
+            value={form.bound_hardware} 
+            onChange={e => setForm({...form, bound_hardware: e.target.value})}
+            placeholder="Identificador único del hardware"
+            style={{ width: '100%', padding: 8 }}
+          />
+          <small style={{ color: '#666' }}>Vincula la licencia a un hardware específico (para AzerothCore: usar MAC o una huella digital)</small>
+        </div>
+        
         <button type="submit" disabled={loading} style={{ padding: '10px 20px', background: '#4caf50', color: 'white', border: 'none', borderRadius: 4 }}>
           {loading ? 'Guardando...' : 'Guardar'}
         </button>

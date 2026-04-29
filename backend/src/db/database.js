@@ -16,6 +16,10 @@ const initializeDatabase = () => {
       owner TEXT,
       description TEXT,
       metadata TEXT,
+      bound_ip TEXT,
+      bound_hardware TEXT,
+      validation_count INTEGER DEFAULT 0,
+      last_validated_at TEXT,
       createdAt TEXT NOT NULL,
       expiresAt TEXT,
       updatedAt TEXT
