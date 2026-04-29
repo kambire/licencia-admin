@@ -13,6 +13,7 @@ if ! grep -q "Ubuntu 22.04" /etc/os-release; then
 fi
 
 echo "=== Instalando Sistema de Licencias en Ubuntu 22.04 ==="
+echo "Repositorio: https://github.com/kambire/licencia-admin"
 
 echo "1. Instalando dependencias base..."
 apt update

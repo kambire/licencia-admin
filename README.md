@@ -20,7 +20,13 @@ Sistema web completo para administrar licencias de software, documentos, servici
 ## Instalación Rápida (Ubuntu 22.04)
 
 ```bash
-sudo bash install-ubuntu22.sh
+sudo bash install.sh
+```
+
+## Actualización (Ubuntu 22.04)
+
+```bash
+sudo bash update.sh
 ```
 
 ## Desarrollo Local
